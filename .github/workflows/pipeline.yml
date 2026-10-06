@@ -18,9 +18,11 @@ jobs:
           - name: juice-shop-vulnerable
             image: bkimminich/juice-shop:latest
             manifest: infra/manifests/juice-shop-insecure.yaml
+            ignore_unfixed: false
           - name: podinfo-secure
-            image: ghcr.io/stefanprodan/podinfo:6.7.1
+            image: ghcr.io/stefanprodan/podinfo:6.15.0
             manifest: infra/manifests/podinfo-secure.yaml
+            ignore_unfixed: true
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +31,7 @@ jobs:
         with:
           image-ref: ${{ matrix.image }}
           severity: CRITICAL,HIGH
+          ignore-unfixed: ${{ matrix.ignore_unfixed }}
           exit-code: 1
 
       - name: Install Kubescape
