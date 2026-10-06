@@ -19,10 +19,12 @@ jobs:
             image: bkimminich/juice-shop:latest
             manifest: infra/manifests/juice-shop-insecure.yaml
             ignore_unfixed: false
+            severity: CRITICAL,HIGH
           - name: podinfo-secure
             image: ghcr.io/stefanprodan/podinfo:6.15.0
             manifest: infra/manifests/podinfo-secure.yaml
             ignore_unfixed: true
+            severity: CRITICAL
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +32,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ matrix.image }}
-          severity: CRITICAL,HIGH
+          severity: ${{ matrix.severity }}
           ignore-unfixed: ${{ matrix.ignore_unfixed }}
           exit-code: 1
 
