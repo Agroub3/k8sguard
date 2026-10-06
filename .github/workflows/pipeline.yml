@@ -37,10 +37,13 @@ jobs:
           exit-code: 1
 
       - name: Install Kubescape
-        run: curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash
+        run: |
+          curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash
+          echo "Installed to:" && find "$HOME/.kubescape" -maxdepth 2 -type f -name kubescape
+          echo "$HOME/.kubescape/bin" >> "$GITHUB_PATH"
 
       - name: Kubescape manifest scan — ${{ matrix.name }}
-        run: ~/.kubescape/kubescape scan ${{ matrix.manifest }} --format pretty-printer --fail-threshold 30
+        run: kubescape scan ${{ matrix.manifest }} --format pretty-printer --fail-threshold 30
 
   gitleaks:
     runs-on: ubuntu-latest
