@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: juice-shop
+  namespace: target-apps
+  labels: {app: juice-shop, security-status: vulnerable}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: juice-shop}}
+  template:
+    metadata: {labels: {app: juice-shop}}
+    spec:
+      containers:
+        - name: juice-shop
+          image: bkimminich/juice-shop:latest
+          ports: [{containerPort: 3000}]
+          # Volontairement : pas de securityContext, pas de limites de ressources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: juice-shop
+  namespace: target-apps
+spec:
+  selector: {app: juice-shop}
+  ports: [{port: 80, targetPort: 3000}]

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podinfo
+  namespace: target-apps
+  labels: {app: podinfo, security-status: secure}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: podinfo}}
+  template:
+    metadata: {labels: {app: podinfo}}
+    spec:
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo:6.7.1
+          ports: [{containerPort: 9898}]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: "50m", memory: "32Mi"}
+            limits: {cpu: "200m", memory: "64Mi"}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: podinfo
+  namespace: target-apps
+spec:
+  selector: {app: podinfo}
+  ports: [{port: 80, targetPort: 9898}]

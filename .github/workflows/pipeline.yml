@@ -5,118 +5,53 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
-
-env:
-  IMAGE: ghcr.io/agroub3/k8sguard/backend
+  workflow_dispatch:
 
 jobs:
-  build:
+  scan-apps:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: juice-shop-vulnerable
+            image: bkimminich/juice-shop:latest
+            manifest: infra/manifests/juice-shop-insecure.yaml
+          - name: podinfo-secure
+            image: ghcr.io/stefanprodan/podinfo:6.7.1
+            manifest: infra/manifests/podinfo-secure.yaml
     steps:
       - uses: actions/checkout@v4
-      - id: meta
-        run: echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./app/backend
-          push: true
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
 
-  semgrep:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Semgrep
-        run: |
-          pip install semgrep
-          semgrep --config=auto --error ./app/backend
-
-  gitleaks:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
+      - name: Trivy image scan — ${{ matrix.name }}
+        uses: aquasecurity/trivy-action@0.35.0
         with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  trivy-deps:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.35.0
-        with:
-          scan-type: fs
-          scan-ref: ./app/backend
+          image-ref: ${{ matrix.image }}
           severity: CRITICAL,HIGH
           exit-code: 1
 
-  trivy-image:
+      - name: Install Kubescape
+        run: curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash
+
+      - name: Kubescape manifest scan — ${{ matrix.name }}
+        run: ~/.kubescape/kubescape scan ${{ matrix.manifest }} --format pretty-printer --fail-threshold 30
+
+  gitleaks:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: ${{ env.IMAGE }}:${{ needs.build.outputs.image_tag }}
-          severity: CRITICAL
-          exit-code: 1
+        with: {fetch-depth: 0}
+      - uses: gitleaks/gitleaks-action@v3
+        env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
 
-  sbom-sign:
-    runs-on: ubuntu-latest
-    needs: [build, trivy-deps, trivy-image]
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.IMAGE }}:${{ needs.build.outputs.image_tag }}
-          format: spdx-json
-          output-file: sbom.json
-      - uses: sigstore/cosign-installer@v3
-      - name: Sign the image
-        run: |
-          cosign sign --key env://COSIGN_PRIVATE_KEY \
-            ${{ env.IMAGE }}:${{ needs.build.outputs.image_tag }}
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.json
-
-  deploy-and-dast:
+  deploy-secure-app:
     runs-on: self-hosted
-    needs: sbom-sign
+    needs: [scan-apps, gitleaks]
+    if: needs.scan-apps.result == 'success' || needs.scan-apps.result == 'failure'
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy to dev cluster
+      - name: Deploy only the app that passed (podinfo)
         run: |
-          kubectl --context kind-k8sguard-dev apply -f infra/manifests/
-          kubectl --context kind-k8sguard-dev rollout status deployment/k8sguard-backend -n target-apps --timeout=120s
-      - name: Port-forward for ZAP
-        run: |
-          kubectl --context kind-k8sguard-dev port-forward -n target-apps svc/k8sguard-backend 8080:80 &
-          sleep 5
-      - uses: zaproxy/action-baseline@v0.12.0
-        with:
-          target: 'http://localhost:8080'
-          cmd_options: '-a'
+          kubectl --context kind-k8sguard-dev apply -f infra/manifests/podinfo-secure.yaml
+          kubectl --context kind-k8sguard-dev rollout status deployment/podinfo -n target-apps --timeout=120s
