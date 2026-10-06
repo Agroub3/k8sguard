@@ -1,0 +1,17 @@
+deploy-and-dast:
+    runs-on: self-hosted
+    needs: sbom-sign
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to dev cluster
+        run: |
+          kubectl --context kind-k8sguard-dev apply -f infra/manifests/
+          kubectl --context kind-k8sguard-dev rollout status deployment/k8sguard-backend -n target-apps --timeout=120s
+      - name: Port-forward for ZAP
+        run: |
+          kubectl --context kind-k8sguard-dev port-forward -n target-apps svc/k8sguard-backend 8080:80 &
+          sleep 5
+      - uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:8080'
+          cmd_options: '-a'
