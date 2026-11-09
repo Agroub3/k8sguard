@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: juice-shop
+  namespace: target-apps
+  labels:
+    app: juice-shop
+    tier: vulnerable-target
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: juice-shop
+  template:
+    metadata:
+      labels:
+        app: juice-shop
+        tier: vulnerable-target
+    spec:
+      nodeName: k8s-worker1
+      containers:
+      - name: juice-shop
+        image: bkimminich/juice-shop:latest
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"

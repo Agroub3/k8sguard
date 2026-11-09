@@ -1,0 +1,36 @@
+name: K8sGuard DevSecOps Pipeline
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  scan-and-deploy:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        app:
+          - name: juice-shop
+            image: bkimminich/juice-shop:latest
+            manifest: manifests/juice-shop.yaml
+          - name: podinfo
+            image: stefanprodan/podinfo:latest
+            manifest: manifests/podinfo.yaml
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Step 1 - Gitleaks Secret Scan
+        run: gitleaks detect --source . --no-git -v
+
+      - name: Step 2 - Kubescape Manifest Security Scan (${{ matrix.app.name }})
+        run: kubescape scan ${{ matrix.app.manifest }}
+
+      - name: Step 3 - Trivy Image CVE Scan (${{ matrix.app.name }})
+        run: trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 0 ${{ matrix.app.image }}
+
+      - name: Step 4 - Deploy Verified Workloads to 3-Node Cluster
+        run: |
+          kubectl apply -n target-apps -f ${{ matrix.app.manifest }}
+          kubectl rollout status -n target-apps -f ${{ matrix.app.manifest }} --timeout=120s
+          kubectl get pods -n target-apps -o wide
